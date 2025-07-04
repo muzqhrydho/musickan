@@ -421,6 +421,29 @@
             margin-bottom: 10px;
         }
 
+        /* Notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #1db954;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.error {
+            background: #ff4444;
+        }
+
         /* Visualization */
         .visualization {
             display: flex;
@@ -747,6 +770,9 @@
         </div>
     </div>
 
+    <!-- Notification -->
+    <div class="notification" id="notification"></div>
+
     <audio id="audioPlayer" preload="metadata"></audio>
 
     <script>
@@ -790,6 +816,7 @@
                 this.musicArtist = document.getElementById('musicArtist');
                 this.playlistName = document.getElementById('playlistName');
                 this.visualization = document.getElementById('visualization');
+                this.notification = document.getElementById('notification');
             }
 
             setupEventListeners() {
@@ -825,12 +852,23 @@
                 document.addEventListener('keydown', (e) => this.handleKeyboard(e));
             }
 
+            showNotification(message, type = 'success') {
+                this.notification.textContent = message;
+                this.notification.className = `notification ${type} show`;
+                
+                setTimeout(() => {
+                    this.notification.classList.remove('show');
+                }, 3000);
+            }
+
             handleFileSelect() {
                 const file = this.musicFile.files[0];
                 if (file) {
                     const fileName = file.name.replace(/\.[^/.]+$/, "");
                     this.musicTitle.value = fileName;
-                    this.musicArtist.value = this.musicArtist.value || 'Unknown Artist';
+                    if (!this.musicArtist.value) {
+                        this.musicArtist.value = 'Unknown Artist';
+                    }
                 }
             }
 
@@ -840,7 +878,7 @@
                 const artist = this.musicArtist.value.trim();
 
                 if (!file || !title) {
-                    alert('Silakan pilih file musik dan masukkan judul lagu!');
+                    this.showNotification('Silakan pilih file musik dan masukkan judul lagu!', 'error');
                     return;
                 }
 
@@ -857,6 +895,7 @@
                 this.saveData();
                 this.renderMusicList();
                 this.clearForm();
+                this.showNotification('Musik berhasil ditambahkan!');
 
                 // Get duration
                 const tempAudio = new Audio(music.url);
@@ -910,15 +949,21 @@
                 if (this.musicLibrary.length === 0) return;
 
                 const track = this.musicLibrary[this.currentTrack];
+                if (!track) return;
+
                 this.audioPlayer.src = track.url;
                 this.trackTitle.textContent = track.title;
                 this.trackArtist.textContent = track.artist;
                 this.trackCover.textContent = '🎵';
+
+                // Reset progress
+                this.progress.style.width = '0%';
+                this.currentTimeEl.textContent = '0:00';
             }
 
             togglePlay() {
                 if (this.musicLibrary.length === 0) {
-                    alert('Tambahkan musik terlebih dahulu!');
+                    this.showNotification('Tambahkan musik terlebih dahulu!', 'error');
                     return;
                 }
 
@@ -930,18 +975,28 @@
             }
 
             play() {
-                this.audioPlayer.play();
-                this.isPlaying = true;
-                this.playBtn.textContent = '⏸️';
-                this.trackCover.className = 'track-cover playing';
-                this.startVisualization();
+                const playPromise = this.audioPlayer.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        this.isPlaying = true;
+                        this.playBtn.textContent = '⏸️';
+                        this.trackCover.classList.add('playing');
+                        this.trackCover.classList.remove('paused');
+                        this.startVisualization();
+                    }).catch(error => {
+                        console.error('Error playing audio:', error);
+                        this.showNotification('Tidak dapat memutar musik!', 'error');
+                    });
+                }
             }
 
             pause() {
                 this.audioPlayer.pause();
                 this.isPlaying = false;
                 this.playBtn.textContent = '▶️';
-                this.trackCover.className = 'track-cover paused';
+                this.trackCover.classList.add('paused');
+                this.trackCover.classList.remove('playing');
                 this.stopVisualization();
             }
 
@@ -951,12 +1006,15 @@
                 if (this.isShuffling) {
                     this.currentTrack = Math.floor(Math.random() * this.musicLibrary.length);
                 } else {
-                    this.currentTrack = this.currentTrack > 0 ? this.currentTrack - 1 : this.musicLibrary.length - 1;
+                    this.currentTrack = this.currentTrack === 0 ? this.musicLibrary.length - 1 : this.currentTrack - 1;
                 }
-                
+
                 this.loadTrack();
                 this.renderMusicList();
-                if (this.isPlaying) this.play();
+                
+                if (this.isPlaying) {
+                    this.play();
+                }
             }
 
             nextTrack() {
@@ -965,27 +1023,51 @@
                 if (this.isShuffling) {
                     this.currentTrack = Math.floor(Math.random() * this.musicLibrary.length);
                 } else {
-                    this.currentTrack = this.currentTrack < this.musicLibrary.length - 1 ? this.currentTrack + 1 : 0;
+                    this.currentTrack = (this.currentTrack + 1) % this.musicLibrary.length;
                 }
-                
+
                 this.loadTrack();
                 this.renderMusicList();
-                if (this.isPlaying) this.play();
+                
+                if (this.isPlaying) {
+                    this.play();
+                }
             }
 
             toggleShuffle() {
                 this.isShuffling = !this.isShuffling;
                 this.shuffleBtn.classList.toggle('active', this.isShuffling);
+                this.showNotification(this.isShuffling ? 'Shuffle diaktifkan' : 'Shuffle dinonaktifkan');
             }
 
             toggleRepeat() {
                 this.isRepeating = !this.isRepeating;
                 this.repeatBtn.classList.toggle('active', this.isRepeating);
+                this.showNotification(this.isRepeating ? 'Repeat diaktifkan' : 'Repeat dinonaktifkan');
+            }
+
+            seekTo(e) {
+                const rect = this.progressBar.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const percentage = clickX / rect.width;
+                const seekTime = percentage * this.audioPlayer.duration;
+                
+                this.audioPlayer.currentTime = seekTime;
+            }
+
+            updateProgress() {
+                if (this.audioPlayer.duration) {
+                    const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
+                    this.progress.style.width = percentage + '%';
+                    this.currentTimeEl.textContent = this.formatTime(this.audioPlayer.currentTime);
+                }
+            }
+
+            updateDuration() {
+                this.totalTimeEl.textContent = this.formatTime(this.audioPlayer.duration);
             }
 
             trackEnded() {
-                if (this.isRepeating) {
-                    this.audioPlayer.currentTimetrackEnded() {
                 if (this.isRepeating) {
                     this.audioPlayer.currentTime = 0;
                     this.play();
@@ -994,72 +1076,9 @@
                 }
             }
 
-            seekTo(e) {
-                const rect = this.progressBar.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                this.audioPlayer.currentTime = percent * this.audioPlayer.duration;
-            }
-
-            updateProgress() {
-                const percent = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
-                this.progress.style.width = percent + '%';
-                this.currentTimeEl.textContent = this.formatTime(this.audioPlayer.currentTime);
-            }
-
-            updateDuration() {
-                this.totalTimeEl.textContent = this.formatTime(this.audioPlayer.duration);
-            }
-
             setVolume(value) {
                 this.audioPlayer.volume = value / 100;
                 this.volumeValue.textContent = value + '%';
-            }
-
-            formatTime(seconds) {
-                if (isNaN(seconds)) return '0:00';
-                const minutes = Math.floor(seconds / 60);
-                const remainingSeconds = Math.floor(seconds % 60);
-                return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-            }
-
-            deleteMusic(index) {
-                if (confirm('Apakah Anda yakin ingin menghapus musik ini?')) {
-                    // Revoke object URL to free memory
-                    URL.revokeObjectURL(this.musicLibrary[index].url);
-                    
-                    this.musicLibrary.splice(index, 1);
-                    
-                    // Adjust current track if needed
-                    if (index < this.currentTrack) {
-                        this.currentTrack--;
-                    } else if (index === this.currentTrack) {
-                        if (this.currentTrack >= this.musicLibrary.length) {
-                            this.currentTrack = 0;
-                        }
-                        if (this.musicLibrary.length > 0) {
-                            this.loadTrack();
-                        } else {
-                            this.resetPlayer();
-                        }
-                    }
-                    
-                    this.saveData();
-                    this.renderMusicList();
-                }
-            }
-
-            resetPlayer() {
-                this.audioPlayer.src = '';
-                this.trackTitle.textContent = 'Pilih Lagu';
-                this.trackArtist.textContent = 'Untuk mulai memutar musik';
-                this.trackCover.className = 'track-cover paused';
-                this.trackCover.textContent = '🎵';
-                this.isPlaying = false;
-                this.playBtn.textContent = '▶️';
-                this.progress.style.width = '0%';
-                this.currentTimeEl.textContent = '0:00';
-                this.totalTimeEl.textContent = '0:00';
-                this.stopVisualization();
             }
 
             startVisualization() {
@@ -1076,10 +1095,51 @@
                 });
             }
 
+            deleteMusic(index) {
+                if (confirm('Apakah Anda yakin ingin menghapus musik ini?')) {
+                    // If deleting current track, pause first
+                    if (index === this.currentTrack && this.isPlaying) {
+                        this.pause();
+                    }
+
+                    this.musicLibrary.splice(index, 1);
+                    
+                    // Adjust current track index
+                    if (index < this.currentTrack) {
+                        this.currentTrack--;
+                    } else if (index === this.currentTrack) {
+                        if (this.currentTrack >= this.musicLibrary.length) {
+                            this.currentTrack = this.musicLibrary.length - 1;
+                        }
+                        if (this.musicLibrary.length > 0) {
+                            this.loadTrack();
+                        } else {
+                            this.resetPlayer();
+                        }
+                    }
+
+                    this.saveData();
+                    this.renderMusicList();
+                    this.showNotification('Musik berhasil dihapus!');
+                }
+            }
+
+            resetPlayer() {
+                this.trackTitle.textContent = 'Pilih Lagu';
+                this.trackArtist.textContent = 'Untuk mulai memutar musik';
+                this.trackCover.textContent = '🎵';
+                this.progress.style.width = '0%';
+                this.currentTimeEl.textContent = '0:00';
+                this.totalTimeEl.textContent = '0:00';
+                this.playBtn.textContent = '▶️';
+                this.isPlaying = false;
+                this.stopVisualization();
+            }
+
             createPlaylist() {
                 const name = this.playlistName.value.trim();
                 if (!name) {
-                    alert('Masukkan nama playlist!');
+                    this.showNotification('Masukkan nama playlist!', 'error');
                     return;
                 }
 
@@ -1093,6 +1153,7 @@
                 this.saveData();
                 this.renderPlaylistList();
                 this.playlistName.value = '';
+                this.showNotification('Playlist berhasil dibuat!');
             }
 
             renderPlaylistList() {
@@ -1107,9 +1168,8 @@
                 }
 
                 this.playlistList.innerHTML = this.playlists.map((playlist, index) => `
-                    <div class="playlist-item ${playlist.id === this.currentPlaylist?.id ? 'active' : ''}" 
-                         onclick="musicPlayer.selectPlaylist(${index})">
-                        <div class="music-icon">📁</div>
+                    <div class="playlist-item ${playlist.id === this.currentPlaylist ? 'active' : ''}" 
+                         onclick="musicPlayer.selectPlaylist(${index}); event.stopPropagation();">
                         <div class="music-info">
                             <div class="music-title">${playlist.name}</div>
                             <div class="music-artist">${playlist.tracks.length} lagu</div>
@@ -1122,8 +1182,9 @@
             }
 
             selectPlaylist(index) {
-                this.currentPlaylist = this.playlists[index];
+                this.currentPlaylist = this.playlists[index].id;
                 this.renderPlaylistList();
+                this.showNotification(`Playlist "${this.playlists[index].name}" dipilih`);
             }
 
             deletePlaylist(index) {
@@ -1131,6 +1192,7 @@
                     this.playlists.splice(index, 1);
                     this.saveData();
                     this.renderPlaylistList();
+                    this.showNotification('Playlist berhasil dihapus!');
                 }
             }
 
@@ -1164,86 +1226,81 @@
                         e.preventDefault();
                         this.nextTrack();
                         break;
-                    case 'KeyS':
-                        e.preventDefault();
-                        this.toggleShuffle();
-                        break;
-                    case 'KeyR':
-                        e.preventDefault();
-                        this.toggleRepeat();
-                        break;
                     case 'ArrowUp':
                         e.preventDefault();
-                        this.volumeSlider.value = Math.min(100, parseInt(this.volumeSlider.value) + 10);
-                        this.setVolume(this.volumeSlider.value);
+                        const currentVol = parseInt(this.volumeSlider.value);
+                        const newVol = Math.min(100, currentVol + 10);
+                        this.volumeSlider.value = newVol;
+                        this.setVolume(newVol);
                         break;
                     case 'ArrowDown':
                         e.preventDefault();
-                        this.volumeSlider.value = Math.max(0, parseInt(this.volumeSlider.value) - 10);
-                        this.setVolume(this.volumeSlider.value);
+                        const currentVolDown = parseInt(this.volumeSlider.value);
+                        const newVolDown = Math.max(0, currentVolDown - 10);
+                        this.volumeSlider.value = newVolDown;
+                        this.setVolume(newVolDown);
                         break;
                 }
             }
 
+            formatTime(seconds) {
+                if (isNaN(seconds) || seconds < 0) return '0:00';
+                
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+
             saveData() {
                 try {
-                    // Save music library (without file objects)
-                    const libraryData = this.musicLibrary.map(music => ({
-                        id: music.id,
-                        title: music.title,
-                        artist: music.artist,
-                        duration: music.duration
-                    }));
-                    
-                    localStorage.setItem('musicLibrary', JSON.stringify(libraryData));
-                    localStorage.setItem('playlists', JSON.stringify(this.playlists));
-                    localStorage.setItem('playerSettings', JSON.stringify({
+                    const data = {
+                        playlists: this.playlists,
                         currentTrack: this.currentTrack,
                         volume: this.volumeSlider.value,
                         isShuffling: this.isShuffling,
                         isRepeating: this.isRepeating
-                    }));
+                    };
+                    localStorage.setItem('musicPlayerData', JSON.stringify(data));
                 } catch (error) {
-                    console.warn('Could not save data to localStorage:', error);
+                    console.error('Error saving data:', error);
                 }
             }
 
             loadSavedData() {
                 try {
-                    // Load playlists
-                    const savedPlaylists = localStorage.getItem('playlists');
-                    if (savedPlaylists) {
-                        this.playlists = JSON.parse(savedPlaylists);
-                        this.renderPlaylistList();
-                    }
-
-                    // Load player settings
-                    const savedSettings = localStorage.getItem('playerSettings');
-                    if (savedSettings) {
-                        const settings = JSON.parse(savedSettings);
-                        this.currentTrack = settings.currentTrack || 0;
-                        this.volumeSlider.value = settings.volume || 50;
-                        this.setVolume(this.volumeSlider.value);
-                        this.isShuffling = settings.isShuffling || false;
-                        this.isRepeating = settings.isRepeating || false;
+                    const saved = localStorage.getItem('musicPlayerData');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        this.playlists = data.playlists || [];
+                        this.currentTrack = data.currentTrack || 0;
+                        this.isShuffling = data.isShuffling || false;
+                        this.isRepeating = data.isRepeating || false;
                         
+                        // Restore volume
+                        if (data.volume) {
+                            this.volumeSlider.value = data.volume;
+                            this.setVolume(data.volume);
+                        }
+
+                        // Restore shuffle/repeat states
                         this.shuffleBtn.classList.toggle('active', this.isShuffling);
                         this.repeatBtn.classList.toggle('active', this.isRepeating);
-                    }
 
-                    // Note: File objects can't be saved to localStorage
-                    // Users will need to re-add their music files each session
-                    this.renderMusicList();
+                        this.renderPlaylistList();
+                    }
                 } catch (error) {
-                    console.warn('Could not load saved data:', error);
+                    console.error('Error loading saved data:', error);
                 }
             }
         }
 
-        // Initialize the music player when page loads
-        let musicPlayer;
+        // Initialize the music player
+        const musicPlayer = new MusicPlayer();
+
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
-            musicPlayer = new MusicPlayer();
+            musicPlayer.renderMusicList();
+            musicPlayer.renderPlaylistList();
         });
     </script>
 </body>
